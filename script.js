@@ -1,0 +1,730 @@
+const clientSelect = document.getElementById("client");
+const dateInput = document.getElementById("target-date");
+const pickDateButton = document.getElementById("pick-date-btn");
+const passwordOutput = document.getElementById("password-output");
+const statusEl = document.getElementById("status");
+const customField = document.getElementById("custom-field");
+const customInput = document.getElementById("custom-input");
+const generateButton = document.getElementById("generate-btn");
+const copyButton = document.getElementById("copy-btn");
+const clearButton = document.getElementById("clear-btn");
+const adminForm = document.getElementById("admin-form");
+const adminClientNameInput = document.getElementById("admin-client-name");
+const adminClientPrefixInput = document.getElementById("admin-client-prefix");
+const adminPasswordInput = document.getElementById("admin-password");
+const adminMessage = document.getElementById("admin-message");
+const adminClientList = document.getElementById("admin-client-list");
+const zipForm = document.getElementById("zip-form");
+const zipFilesInput = document.getElementById("zip-files");
+const zipBrowseBtn = document.getElementById("zip-browse-btn");
+const zipFileList = document.getElementById("zip-file-list");
+const zipNameInput = document.getElementById("zip-name");
+const zipPasswordInput = document.getElementById("zip-password");
+const zipPasswordConfirmInput = document.getElementById("zip-password-confirm");
+const zipAlgoSelect = document.getElementById("zip-algo");
+const zipOsSelect = document.getElementById("zip-os-hint");
+const zipAlgoHint = document.getElementById("zip-algo-hint");
+const zipOsHintText = document.getElementById("zip-os-hint-text");
+const zipGenerateBtn = document.getElementById("zip-generate-btn");
+const zipClearBtn = document.getElementById("zip-clear-btn");
+const zipStatus = document.getElementById("zip-status");
+const zipDropZone = document.getElementById("zip-drop-zone");
+
+const CUSTOM_CLIENT_KEY = "custom";
+let cachedClients = [];
+const ZIP_SIZE_LIMIT = 512 * 1024 * 1024; // 512MB
+
+async function fetchClients() {
+  try {
+    const response = await fetch("/api/clients");
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    cachedClients = data.clients ?? [];
+    populateClients(cachedClients);
+  } catch (error) {
+    console.error("Failed to load clients", error);
+    clientSelect.innerHTML =
+      '<option value="" disabled selected>クライアント取得失敗</option>';
+    statusEl.textContent = "取引先の読み込みに失敗しました。再読み込みしてください。";
+  }
+}
+
+function populateClients(clients) {
+  const previousSelection = clientSelect.value;
+
+  if (!clients.length) {
+    clientSelect.innerHTML =
+      '<option value="" disabled selected>未登録</option>';
+    statusEl.textContent = "使用可能なクライアントが登録されていません。";
+    renderAdminClientList([]);
+    return;
+  }
+
+  const seenKeys = new Set(clients.map((client) => client.key));
+  if (!seenKeys.has(CUSTOM_CLIENT_KEY)) {
+    clients = [
+      ...clients,
+      {
+        key: CUSTOM_CLIENT_KEY,
+        label: "Custom（自由入力）",
+        rule: "自由入力 + 任意の日付(YYYYMMDD)",
+      },
+    ];
+  }
+
+  clientSelect.innerHTML =
+    '<option value="" disabled selected>クライアントを選択</option>';
+  for (const client of clients) {
+    const option = document.createElement("option");
+    option.value = client.key;
+    if (client.rule) {
+      option.textContent = `${client.label}（${client.rule}）`;
+    } else {
+      option.textContent = client.label;
+    }
+    clientSelect.appendChild(option);
+  }
+
+  const availableKeys = new Set(clients.map((client) => client.key));
+  if (availableKeys.has(previousSelection)) {
+    clientSelect.value = previousSelection;
+  } else {
+    clientSelect.selectedIndex = 0;
+  }
+  toggleCustomField();
+  renderAdminClientList(clients);
+}
+
+function resetDateToToday({ silent = false } = {}) {
+  const today = new Date();
+  const iso = today.toISOString().split("T")[0];
+  dateInput.value = iso;
+  if (!silent) {
+    statusEl.textContent = "日付を本日にリセットしました。";
+    statusEl.dataset.state = "info";
+  }
+}
+
+function openDatePicker() {
+  if (typeof dateInput.showPicker === "function") {
+    dateInput.showPicker();
+    return;
+  }
+  dateInput.focus();
+  statusEl.textContent = "日付欄をクリックして変更してください。";
+  statusEl.dataset.state = "info";
+}
+
+function toggleCustomField() {
+  const isCustom = clientSelect.value === CUSTOM_CLIENT_KEY;
+  customField.hidden = !isCustom;
+  if (!isCustom) {
+    customInput.value = "";
+  } else {
+    customInput.focus();
+  }
+
+  if (!clientSelect.value) {
+    passwordOutput.textContent = "------";
+    statusEl.textContent = "クライアントを選択してください。";
+    statusEl.dataset.state = "info";
+  } else {
+    passwordOutput.textContent = "------";
+    statusEl.textContent = "生成ボタンを押してパスワードを作成してください。";
+    statusEl.dataset.state = "info";
+  }
+}
+
+async function triggerGeneration() {
+  const clientKey = clientSelect.value;
+  const targetDate = dateInput.value;
+  const isCustom = clientKey === CUSTOM_CLIENT_KEY;
+  const customValue = customInput.value;
+  const trimmedCustomValue = customValue.trim();
+
+  if (!clientKey) {
+    passwordOutput.textContent = "------";
+    statusEl.textContent = "クライアントを選択してください。";
+    return;
+  }
+
+  if (isCustom && !trimmedCustomValue) {
+    passwordOutput.textContent = "------";
+    statusEl.textContent = "自由入力のテキストを入力してください。";
+    statusEl.dataset.state = "warning";
+    return;
+  }
+
+  if (isCustom) {
+    const compactDate = targetDate ? targetDate.replaceAll("-", "") : "";
+    const localPassword = `${trimmedCustomValue}${compactDate}`;
+    passwordOutput.textContent = localPassword;
+    statusEl.textContent = targetDate
+      ? `生成日: ${targetDate}`
+      : "生成しました。";
+    statusEl.dataset.state = "success";
+    return;
+  }
+
+  try {
+    statusEl.textContent = "生成中...";
+    const response = await fetch("/api/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clientKey,
+        date: targetDate || null,
+        customInput: isCustom ? trimmedCustomValue : undefined,
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "生成に失敗しました。");
+    }
+
+    passwordOutput.textContent = result.password;
+    statusEl.textContent = result.date ? `生成日: ${result.date}` : "生成しました。";
+    statusEl.dataset.state = "success";
+  } catch (error) {
+    console.error(error);
+    passwordOutput.textContent = "------";
+    statusEl.textContent = error.message;
+    statusEl.dataset.state = "error";
+  }
+}
+
+async function copyPassword() {
+  const value = passwordOutput.textContent;
+  if (!value || value === "------") {
+    statusEl.textContent = "コピーするパスワードがありません。";
+    statusEl.dataset.state = "warning";
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+    statusEl.textContent = "クリップボードにコピーしました。";
+    statusEl.dataset.state = "success";
+  } catch (error) {
+    console.error(error);
+    statusEl.textContent =
+      "コピーに失敗しました。手動で選択してコピーしてください。";
+    statusEl.dataset.state = "error";
+  }
+}
+
+function clearForm() {
+  clientSelect.selectedIndex = 0;
+  toggleCustomField();
+  customInput.value = "";
+  resetDateToToday({ silent: true });
+  passwordOutput.textContent = "------";
+  statusEl.textContent = "";
+  delete statusEl.dataset.state;
+}
+
+function renderAdminClientList(clients) {
+  if (!adminClientList) return;
+
+  adminClientList.innerHTML = "";
+  const realClients = clients.filter(
+    (client) => client.key && client.key !== CUSTOM_CLIENT_KEY
+  );
+
+  if (!realClients.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "登録されているルールがありません。";
+    adminClientList.appendChild(emptyItem);
+    return;
+  }
+
+  for (const client of realClients) {
+    const item = document.createElement("li");
+    const label = client.label || client.name || client.key;
+    const prefix = client.prefix || "";
+    item.classList.add("admin-list__item");
+
+    const info = document.createElement("span");
+    info.classList.add("admin-list__label");
+    info.textContent = `${label}: ${prefix}`;
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.classList.add("admin-delete-button");
+    deleteButton.dataset.key = client.key;
+    deleteButton.dataset.label = label;
+    deleteButton.textContent = "削除";
+
+    item.appendChild(info);
+    item.appendChild(deleteButton);
+    adminClientList.appendChild(item);
+  }
+}
+
+function setAdminMessage(message, state) {
+  if (!adminMessage) return;
+  adminMessage.textContent = message;
+  if (state) {
+    adminMessage.dataset.state = state;
+  } else {
+    delete adminMessage.dataset.state;
+  }
+}
+
+async function handleDeleteClient(target) {
+  const key = target.dataset.key;
+  const label = target.dataset.label;
+  const password = adminPasswordInput.value;
+
+  if (!key) {
+    setAdminMessage("削除対象が見つかりません。", "error");
+    return;
+  }
+
+  if (!password) {
+    setAdminMessage("削除には管理者パスワードを入力してください。", "error");
+    return;
+  }
+
+  setAdminMessage(`${label} を削除しています...`, "info");
+
+  try {
+    const response = await fetch("/api/delete_client", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        key,
+        admin_password: password,
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "削除に失敗しました。");
+    }
+
+    setAdminMessage(result.message || `${label} を削除しました。`, "success");
+    await fetchClients();
+  } catch (error) {
+    console.error("Failed to delete client", error);
+    setAdminMessage(error.message, "error");
+  }
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(
+    Math.floor(Math.log10(bytes) / Math.log10(1024)),
+    units.length - 1
+  );
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(value >= 100 || index === 0 ? 0 : value >= 10 ? 1 : 2)} ${
+    units[index]
+  }`;
+}
+
+function setZipStatus(message, state) {
+  if (!zipStatus) return;
+  zipStatus.textContent = message;
+  if (state) {
+    zipStatus.dataset.state = state;
+  } else {
+    delete zipStatus.dataset.state;
+  }
+}
+
+function updateZipFileList() {
+  if (!zipFileList || !zipFilesInput) return;
+
+  zipFileList.innerHTML = "";
+  const files = Array.from(zipFilesInput.files || []);
+  let totalSize = 0;
+
+  if (!files.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "ファイルが選択されていません。";
+    zipFileList.appendChild(emptyItem);
+  } else {
+    for (const file of files) {
+      totalSize += file.size;
+      const item = document.createElement("li");
+      item.textContent = `${file.name} (${formatBytes(file.size)})`;
+      zipFileList.appendChild(item);
+    }
+    const totalItem = document.createElement("li");
+    totalItem.classList.add("zip-file-list__total");
+    totalItem.textContent = `合計: ${formatBytes(totalSize)}`;
+    zipFileList.appendChild(totalItem);
+  }
+
+  if (totalSize > ZIP_SIZE_LIMIT) {
+    setZipStatus(
+      `アップロード合計サイズが上限(${formatBytes(
+        ZIP_SIZE_LIMIT
+      )})を超えています。`,
+      "warning"
+    );
+  } else if (!zipStatus.textContent) {
+    setZipStatus("必要項目を入力するとZIP生成が可能になります。", "info");
+  }
+
+  updateZipGenerateState();
+}
+
+function updateZipGenerateState() {
+  if (!zipGenerateBtn) return;
+  const hasFiles = zipFilesInput && zipFilesInput.files && zipFilesInput.files.length;
+  const nameValue = (zipNameInput?.value || "").trim();
+  const password = zipPasswordInput?.value || "";
+  const passwordConfirm = zipPasswordConfirmInput?.value || "";
+  const totalSize = Array.from(zipFilesInput?.files || []).reduce(
+    (acc, file) => acc + file.size,
+    0
+  );
+
+  const canGenerate =
+    Boolean(hasFiles) &&
+    Boolean(nameValue) &&
+    password.length > 0 &&
+    passwordConfirm.length > 0 &&
+    password === passwordConfirm &&
+    totalSize <= ZIP_SIZE_LIMIT;
+
+  zipGenerateBtn.disabled = !canGenerate;
+}
+
+function updateZipHints() {
+  if (!zipAlgoHint || !zipAlgoSelect) return;
+
+  const algo = zipAlgoSelect.value;
+  const os = zipOsSelect?.value || "windows";
+
+  if (algo === "AES-256") {
+    zipAlgoHint.textContent =
+      "AES-256で暗号化します。Windows標準のエクスプローラーでは解凍できないため、7-Zip（推奨）またはWinZipをご利用ください。";
+    zipAlgoHint.dataset.state = "success";
+  } else {
+    zipAlgoHint.textContent =
+      "ZipCryptoは互換性重視の方式です。暗号強度は低いため重要情報にはAES-256を推奨します。";
+    zipAlgoHint.dataset.state = "warning";
+  }
+
+  if (zipOsHintText) {
+    if (os === "windows") {
+      if (algo === "AES-256") {
+        zipOsHintText.textContent =
+          "WindowsでAES暗号ZIPを開くには7-Zipなどの専用ソフトが必要です。";
+        zipOsHintText.dataset.state = "warning";
+      } else {
+        zipOsHintText.textContent =
+          "ZipCryptoはWindowsエクスプローラーで展開できますが、安全性は高くありません。";
+        zipOsHintText.dataset.state = "warning";
+      }
+    } else {
+      if (algo === "AES-256") {
+        zipOsHintText.textContent =
+          "macOS FinderはAES暗号ZIPに概ね対応していますが、最新環境での利用を推奨します。";
+        zipOsHintText.dataset.state = "info";
+      } else {
+        zipOsHintText.textContent =
+          "macOS FinderでもZipCryptoは利用可能ですが、暗号強度は低い点に注意してください。";
+        zipOsHintText.dataset.state = "info";
+      }
+    }
+  }
+}
+
+function clearZipForm() {
+  if (!zipForm) return;
+  zipForm.reset();
+  if (zipFilesInput) {
+    zipFilesInput.value = "";
+  }
+  if (zipFileList) {
+    zipFileList.innerHTML = "";
+  }
+  updateZipFileList();
+  updateZipHints();
+  setZipStatus("", null);
+  if (zipDropZone) {
+    zipDropZone.classList.remove("is-dragover");
+  }
+}
+
+async function submitZipForm(event) {
+  event.preventDefault();
+  if (!zipGenerateBtn) return;
+
+  updateZipGenerateState();
+  if (zipGenerateBtn.disabled) {
+    setZipStatus(
+      "必須入力が不足しています。ファイルとパスワード（確認一致）、ZIP名を確認してください。",
+      "error"
+    );
+    return;
+  }
+
+  setZipStatus("ZIPを生成しています...", "info");
+  zipGenerateBtn.disabled = true;
+
+  try {
+    const formData = new FormData();
+    const files = Array.from(zipFilesInput?.files || []);
+    for (const file of files) {
+      formData.append("files", file);
+    }
+    formData.append("zip_name", (zipNameInput?.value || "").trim());
+    formData.append("password", zipPasswordInput?.value || "");
+    formData.append("password_confirm", zipPasswordConfirmInput?.value || "");
+    formData.append("algo", zipAlgoSelect?.value || "AES-256");
+
+    const response = await fetch("/api/zip", {
+      method: "POST",
+      body: formData,
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/zip")) {
+      const blob = await response.blob();
+      let downloadName = (zipNameInput?.value || "").trim();
+      if (!downloadName) {
+        downloadName = `monozip_${new Date()
+          .toISOString()
+          .replace(/[-:T]/g, "")
+          .slice(0, 14)}`;
+      }
+      if (!downloadName.toLowerCase().endsWith(".zip")) {
+        downloadName = `${downloadName}.zip`;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = downloadName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      setZipStatus("ZIPファイルをダウンロードしました。", "success");
+    } else {
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error("不明なエラーが発生しました。");
+      }
+
+      const state = response.status === 413 ? "warning" : "error";
+      setZipStatus(result.error || "ZIPの生成に失敗しました。", state);
+    }
+  } catch (error) {
+    console.error("Failed to create zip", error);
+    setZipStatus(error.message || "ZIP生成中にエラーが発生しました。", "error");
+  } finally {
+    updateZipGenerateState();
+  }
+}
+
+async function submitAdminForm(event) {
+  event.preventDefault();
+
+  const name = adminClientNameInput.value.trim();
+  const prefix = adminClientPrefixInput.value.trim();
+  const password = adminPasswordInput.value;
+
+  if (!name || !prefix || !password) {
+    setAdminMessage("全ての項目を入力してください。", "error");
+    return;
+  }
+
+  setAdminMessage("登録中です...", "info");
+
+  try {
+    const response = await fetch("/api/add_client", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        prefix,
+        admin_password: password,
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "追加に失敗しました。");
+    }
+
+    const state = result.success ? "success" : "warning";
+    setAdminMessage(result.message || "処理が完了しました。", state);
+
+    adminForm.reset();
+    adminClientNameInput.focus();
+    await fetchClients();
+  } catch (error) {
+    console.error("Failed to add client", error);
+    setAdminMessage(error.message, "error");
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  fetchClients().then(() => resetDateToToday({ silent: true }));
+
+  clientSelect.addEventListener("change", () => {
+    toggleCustomField();
+  });
+  dateInput.addEventListener("change", () => {
+    statusEl.textContent = "日付を変更しました。生成ボタンを押してください。";
+    statusEl.dataset.state = "info";
+    passwordOutput.textContent = "------";
+  });
+  pickDateButton.addEventListener("click", openDatePicker);
+  generateButton.addEventListener("click", triggerGeneration);
+  copyButton.addEventListener("click", copyPassword);
+  clearButton.addEventListener("click", clearForm);
+  customInput.addEventListener("input", () => {
+    if (clientSelect.value === CUSTOM_CLIENT_KEY) {
+      statusEl.textContent = "生成ボタンを押してパスワードを作成してください。";
+      statusEl.dataset.state = "info";
+      passwordOutput.textContent = "------";
+    }
+  });
+  if (adminForm) {
+    adminForm.addEventListener("submit", submitAdminForm);
+  }
+  if (adminClientList) {
+    adminClientList.addEventListener("click", (event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.classList.contains("admin-delete-button")
+      ) {
+        handleDeleteClient(target);
+      }
+    });
+  }
+  document.querySelectorAll(".password-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.target;
+      if (!targetId) return;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      if (input.type === "password") {
+        input.type = "text";
+        button.textContent = "非表示";
+      } else {
+        input.type = "password";
+        button.textContent = "表示";
+      }
+      input.focus();
+    });
+  });
+
+  if (zipForm) {
+    updateZipFileList();
+    updateZipHints();
+    zipForm.addEventListener("submit", submitZipForm);
+  }
+
+  if (zipClearBtn) {
+    zipClearBtn.addEventListener("click", clearZipForm);
+  }
+
+  if (zipFilesInput) {
+    zipFilesInput.addEventListener("change", () => {
+      updateZipFileList();
+    });
+  }
+
+  if (zipBrowseBtn) {
+    zipBrowseBtn.addEventListener("click", () => {
+      zipFilesInput?.click();
+    });
+  }
+
+  if (zipNameInput) {
+    zipNameInput.addEventListener("input", updateZipGenerateState);
+  }
+
+  if (zipPasswordInput) {
+    zipPasswordInput.addEventListener("input", updateZipGenerateState);
+  }
+
+  if (zipPasswordConfirmInput) {
+    zipPasswordConfirmInput.addEventListener("input", updateZipGenerateState);
+  }
+
+  if (zipAlgoSelect) {
+    zipAlgoSelect.addEventListener("change", () => {
+      updateZipHints();
+    });
+  }
+
+  if (zipOsSelect) {
+    zipOsSelect.addEventListener("change", () => {
+      updateZipHints();
+    });
+  }
+
+  if (zipDropZone) {
+    const activateDrag = () => zipDropZone.classList.add("is-dragover");
+    const deactivateDrag = () => zipDropZone.classList.remove("is-dragover");
+
+    ["dragenter", "dragover"].forEach((eventName) => {
+      zipDropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        activateDrag();
+      });
+    });
+
+    ["dragleave", "dragend"].forEach((eventName) => {
+      zipDropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        deactivateDrag();
+      });
+    });
+
+    zipDropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deactivateDrag();
+      const files = event.dataTransfer?.files;
+      if (!files || !files.length) {
+        return;
+      }
+      const dataTransfer = new DataTransfer();
+      Array.from(files).forEach((file) => dataTransfer.items.add(file));
+      if (zipFilesInput) {
+        zipFilesInput.files = dataTransfer.files;
+        updateZipFileList();
+      }
+    });
+
+    zipDropZone.addEventListener("click", (event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("button") &&
+        target !== zipDropZone
+      ) {
+        return;
+      }
+      zipFilesInput?.click();
+    });
+  }
+});

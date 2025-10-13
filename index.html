@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MonoZip Web Secure Client Password Rule</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app__header">
+        <h1>MonoZip Secure Password</h1>
+        <p>取引先のルールと日付からパスワードを自動生成します。</p>
+      </header>
+
+      <section class="card">
+        <div class="field">
+          <label for="client">クライアント</label>
+          <select id="client" name="client" aria-label="取引先を選択">
+            <option value="" disabled selected>読み込み中...</option>
+          </select>
+        </div>
+
+        <div class="field" id="custom-field" hidden>
+          <label for="custom-input">自由入力</label>
+          <input
+            id="custom-input"
+            type="text"
+            aria-label="自由入力テキスト"
+            placeholder="任意のパスワードベースを入力"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-date">日付</label>
+          <input id="target-date" type="date" aria-label="パスワード生成日" />
+          <button id="pick-date-btn" type="button" class="ghost-button">
+            日付を選択
+          </button>
+        </div>
+
+        <div class="actions" aria-label="パスワード操作ボタン">
+          <button id="generate-btn" type="button" class="pill-button pill-button--filled">
+            生成
+          </button>
+          <button id="copy-btn" type="button" class="pill-button pill-button--outline">
+            コピー
+          </button>
+          <button id="clear-btn" type="button" class="pill-button pill-button--ghost">
+            クリア
+          </button>
+        </div>
+
+        <div class="result">
+          <div class="result__header">
+            <span>生成パスワード</span>
+          </div>
+          <output id="password-output" aria-live="polite">------</output>
+          <p id="status" role="status"></p>
+        </div>
+      </section>
+
+      <section class="card admin-card" aria-labelledby="admin-form-title">
+        <header class="admin-card__header">
+          <h2 id="admin-form-title">管理者用クライアント追加フォーム</h2>
+          <p>取引先ルールを追加するには管理者パスワードが必要です。</p>
+        </header>
+
+        <form id="admin-form" autocomplete="off">
+          <div class="field">
+            <label for="admin-client-name">クライアント名</label>
+            <input
+              id="admin-client-name"
+              name="name"
+              type="text"
+              placeholder="例) YZさま"
+              aria-label="クライアント名"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label for="admin-client-prefix">接頭語</label>
+            <input
+              id="admin-client-prefix"
+              name="prefix"
+              type="text"
+              placeholder="例) YZC_OFF"
+              aria-label="接頭語"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label for="admin-password">管理者パスワード</label>
+            <input
+              id="admin-password"
+              name="admin_password"
+              type="password"
+              aria-label="管理者パスワード"
+              placeholder="管理者パスワードを入力"
+              required
+            />
+          </div>
+
+          <button id="admin-submit" type="submit" class="admin-button">
+            クライアントを追加
+          </button>
+        </form>
+
+        <p id="admin-message" role="alert"></p>
+
+        <div class="admin-list">
+          <h3>登録済みルール一覧</h3>
+          <ul id="admin-client-list"></ul>
+        </div>
+      </section>
+
+      <section class="card zip-card" aria-labelledby="zip-card-title">
+        <header class="zip-card__header">
+          <h2 id="zip-card-title">ZIP作成</h2>
+          <p>複数ファイルをまとめて暗号化ZIPにできます。既存のパスワード生成結果もそのまま利用できます。</p>
+        </header>
+
+        <form
+          id="zip-form"
+          method="post"
+          enctype="multipart/form-data"
+          autocomplete="off"
+        >
+          <div
+            id="zip-drop-zone"
+            class="zip-drop-zone"
+            aria-label="ファイルをドラッグ＆ドロップする領域"
+          >
+            <input
+              id="zip-files"
+              name="files"
+              type="file"
+              multiple
+              aria-label="ZIPに含めるファイル"
+            />
+            <div class="zip-drop-zone__content">
+              <p class="zip-drop-zone__headline">ファイルをドラッグ＆ドロップ</p>
+              <p class="zip-drop-zone__subline">または <button type="button" id="zip-browse-btn">ファイルを選択</button></p>
+              <ul id="zip-file-list"></ul>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="zip-name">ZIPファイル名</label>
+            <input
+              id="zip-name"
+              name="zip_name"
+              type="text"
+              placeholder="例) project_backup"
+              aria-label="ZIPファイル名"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="field field--password">
+            <label for="zip-password">パスワード</label>
+            <div class="password-input">
+              <input
+                id="zip-password"
+                name="password"
+                type="password"
+                aria-label="ZIPパスワード"
+                autocomplete="new-password"
+                required
+              />
+              <button type="button" class="password-toggle" data-target="zip-password">
+                表示
+              </button>
+            </div>
+          </div>
+
+          <div class="field field--password">
+            <label for="zip-password-confirm">パスワード確認</label>
+            <div class="password-input">
+              <input
+                id="zip-password-confirm"
+                name="password_confirm"
+                type="password"
+                aria-label="ZIPパスワード確認"
+                autocomplete="new-password"
+                required
+              />
+              <button type="button" class="password-toggle" data-target="zip-password-confirm">
+                表示
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="zip-algo">暗号方式</label>
+            <select id="zip-algo" name="algo" aria-label="暗号方式">
+              <option value="AES-256" selected>AES-256（推奨）</option>
+              <option value="ZipCrypto">ZipCrypto（Windows標準互換）</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="zip-os-hint">ご利用環境</label>
+            <select id="zip-os-hint" aria-label="想定利用OS">
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+            </select>
+          </div>
+
+          <div class="zip-hints">
+            <p id="zip-algo-hint" class="zip-hint zip-hint--info"></p>
+            <p id="zip-os-hint-text" class="zip-hint zip-hint--info"></p>
+          </div>
+
+          <div class="zip-actions">
+            <button id="zip-generate-btn" type="submit" class="pill-button pill-button--filled" disabled>
+              ZIPを生成
+            </button>
+            <button id="zip-clear-btn" type="button" class="pill-button pill-button--ghost">
+              クリア
+            </button>
+          </div>
+        </form>
+
+        <p id="zip-status" role="status" class="zip-status"></p>
+      </section>
+    </main>
+
+    <script src="script.js" defer></script>
+  </body>
+</html>
