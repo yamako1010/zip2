@@ -1,0 +1,23 @@
+{
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.12",
+        "includeFiles": [
+          "templates/**",
+          "static/**",
+          "data/**",
+          "config.py"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.py"
+    }
+  ]
+}

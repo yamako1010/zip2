@@ -28,27 +28,55 @@ def format_mmdd(target_date: date) -> str:
 
 def ensure_data_file() -> None:
     """Ensure the client storage exists with default data."""
-    if not DATA_FILE.exists():
+    if DATA_FILE.exists():
+        return
+
+    try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         DATA_FILE.write_text(
             json.dumps(DEFAULT_CLIENTS, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+    except OSError:
+        # Some deployment targets mount the code directory as read-only. In that case we
+        # fall back to in-memory defaults instead of failing client lookups entirely.
+        raise
 
 
 def load_clients() -> list[dict[str, str]]:
     """Load client records from storage."""
-    ensure_data_file()
-    data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    try:
+        ensure_data_file()
+    except OSError:
+        return [deepcopy(entry) for entry in DEFAULT_CLIENTS]
+
+    try:
+        data_text = DATA_FILE.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError):
+        return [deepcopy(entry) for entry in DEFAULT_CLIENTS]
+
+    try:
+        data = json.loads(data_text)
+    except json.JSONDecodeError as exc:
+        raise PasswordRuleError("クライアント設定ファイルが壊れています。") from exc
+
+    if not isinstance(data, list):
+        raise PasswordRuleError("クライアント設定ファイルの形式が不正です。")
+
     # Defensive copy to avoid accidental mutation outside
     return [deepcopy(entry) for entry in data]
 
 
 def save_clients(clients: list[dict[str, str]]) -> None:
     """Persist client records to storage."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    DATA_FILE.write_text(
-        json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        DATA_FILE.write_text(
+            json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError as exc:
+        raise PasswordRuleError(
+            "クライアント情報を保存できません。サーバーの書き込み権限を確認してください。"
+        ) from exc
 
 
 def generate_password(client_key: str, target_date: date) -> str:

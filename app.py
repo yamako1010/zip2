@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from datetime import date, datetime
 import io
+from datetime import date, datetime
 from itertools import count
 from pathlib import Path
 from typing import Any
 
 import pyzipper
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from password_rules import (
     CUSTOM_CLIENT_KEY,
+    DEFAULT_CLIENTS,
     PasswordRuleError,
     add_client_rule,
     build_custom_password,
@@ -27,14 +28,39 @@ except ImportError as exc:  # pragma: no cover - ensures clearer error for missi
 
 
 BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR
+TEMPLATES_DIR = BASE_DIR / "templates"
+STATIC_DIR = BASE_DIR / "static"
 
-app = Flask(__name__, static_folder=str(STATIC_DIR))
+app = Flask(
+    __name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR)
+)
 MAX_UPLOAD_ARCHIVE_SIZE = 512 * 1024 * 1024  # 512MB
 
 resolved_path = Path(__file__).resolve()
-print(f"Running Flask app from: {resolved_path}")
 app.logger.info("[MonoZip] Using app.py at: %s", resolved_path)
+app.logger.info("[MonoZip] templates -> %s", TEMPLATES_DIR)
+app.logger.info("[MonoZip] static -> %s", STATIC_DIR)
+
+
+def _build_default_client_payload() -> list[dict[str, str]]:
+    """Return default clients formatted for UI when storage is unavailable."""
+    clients = [
+        {
+            "key": client["key"],
+            "label": client["name"],
+            "rule": f"{client['prefix']} + MMDD",
+            "prefix": client["prefix"],
+        }
+        for client in DEFAULT_CLIENTS
+    ]
+    clients.append(
+        {
+            "key": CUSTOM_CLIENT_KEY,
+            "label": "Custom（自由入力）",
+            "rule": "自由入力 + 任意の日付(YYYYMMDD)",
+        }
+    )
+    return clients
 
 
 def parse_date(value: str | None) -> date:
@@ -49,8 +75,22 @@ def parse_date(value: str | None) -> date:
 
 @app.get("/api/clients")
 def list_clients() -> Any:
-    clients = get_available_clients()
-    return jsonify({"clients": clients})
+    fallback_used = False
+    try:
+        clients = get_available_clients()
+    except PasswordRuleError as err:
+        app.logger.error("クライアント情報の取得に失敗: %s", err)
+        clients = _build_default_client_payload()
+        fallback_used = True
+    except Exception as exc:  # pragma: no cover - defensive
+        app.logger.exception("クライアント情報取得で予期しないエラー: %s", exc)
+        clients = _build_default_client_payload()
+        fallback_used = True
+
+    response: dict[str, Any] = {"clients": clients}
+    if fallback_used:
+        response["fallback"] = True
+    return jsonify(response)
 
 
 @app.post("/api/generate")
@@ -72,6 +112,7 @@ def api_generate() -> Any:
             target_date = parse_date(raw_date)
             password = generate_password(client_key, target_date)
     except PasswordRuleError as err:
+        app.logger.warning("パスワード生成エラー: %s", err)
         return jsonify({"error": str(err)}), 400
 
     date_value = target_date.isoformat() if target_date else None
@@ -88,6 +129,7 @@ def api_add_client() -> Any:
     admin_password = payload.get("admin_password") or payload.get("adminPassword")
 
     if not admin_password:
+        app.logger.warning("管理者パスワード未入力でクライアント追加リクエストを受信")
         return (
             jsonify(
                 {"success": False, "error": "管理者パスワードを入力してください。"}
@@ -96,6 +138,7 @@ def api_add_client() -> Any:
         )
 
     if admin_password != ADMIN_PASSWORD:
+        app.logger.warning("管理者パスワード不一致のためクライアント追加を拒否しました。")
         return (
             jsonify({"success": False, "error": "管理者パスワードが正しくありません。"}),
             401,
@@ -104,6 +147,7 @@ def api_add_client() -> Any:
     try:
         result = add_client_rule(name, prefix)
     except PasswordRuleError as err:
+        app.logger.warning("クライアント追加エラー: %s", err)
         return jsonify({"success": False, "error": str(err)}), 400
 
     status = 200
@@ -128,18 +172,22 @@ def api_zip() -> Any:
     files = request.files.getlist("files")
 
     if not files:
+        app.logger.warning("ZIP生成リクエストにファイルが含まれていません。")
         return jsonify({"error": "1つ以上のファイルを選択してください。"}), 400
 
     password = (form.get("password") or "").strip()
     password_confirm = (form.get("password_confirm") or "").strip()
     if not password or not password_confirm:
+        app.logger.warning("ZIP生成リクエストでパスワード未入力。")
         return jsonify({"error": "パスワードと確認用パスワードを入力してください。"}), 400
 
     if password != password_confirm:
+        app.logger.warning("ZIP生成リクエストで確認用パスワードが不一致。")
         return jsonify({"error": "パスワードが一致しません。"}), 400
 
     algo = (form.get("algo") or "AES-256").upper()
     if algo not in {"AES-256", "ZIPCRYPTO"}:
+        app.logger.warning("不正な暗号方式が指定されました: %s", algo)
         return jsonify({"error": "対応していない暗号方式が指定されました。"}), 400
 
     requested_name = (form.get("zip_name") or "").strip()
@@ -167,6 +215,9 @@ def api_zip() -> Any:
 
         total_size += len(data)
         if total_size > MAX_UPLOAD_ARCHIVE_SIZE:
+            app.logger.warning(
+                "ZIP生成リクエストがサイズ上限を超過: %d bytes", total_size
+            )
             return (
                 jsonify(
                     {
@@ -180,6 +231,7 @@ def api_zip() -> Any:
         collected_files.append((safe_name, data))
 
     if not collected_files:
+        app.logger.warning("ZIP生成リクエストに有効ファイルがありませんでした。")
         return jsonify({"error": "有効なファイルが選択されていません。"}), 400
 
     buffer = io.BytesIO()
@@ -249,6 +301,7 @@ def api_delete_client() -> Any:
     try:
         result = delete_client_rule(key)
     except PasswordRuleError as err:
+        app.logger.warning("クライアント削除エラー: %s", err)
         return jsonify({"success": False, "error": str(err)}), 400
 
     return jsonify(
@@ -262,13 +315,26 @@ def api_delete_client() -> Any:
 
 @app.get("/")
 def root() -> Any:
-    return send_from_directory(STATIC_DIR, "index.html")
+    template_path = TEMPLATES_DIR / "index.html"
+    log_message = f"Rendering template: {template_path}"
+    print(log_message)
+    app.logger.info(log_message)
+    return render_template("index.html")
 
 
-@app.get("/<path:filename>")
-def static_files(filename: str) -> Any:
-    return send_from_directory(STATIC_DIR, filename)
+@app.after_request
+def add_cors_headers(response):
+    response.headers.setdefault("Access-Control-Allow-Origin", "*")
+    response.headers.setdefault(
+        "Access-Control-Allow-Headers", "Content-Type, Authorization"
+    )
+    response.headers.setdefault(
+        "Access-Control-Allow-Methods", "GET, POST, OPTIONS"
+    )
+    return response
 
 
 if __name__ == "__main__":
+    print("Running Flask app from:", __file__)
+    app.logger.info("[MonoZip] Starting development server from: %s", resolved_path)
     app.run(debug=True)

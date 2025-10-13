@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MonoZip Web Secure Client Password Rule</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body>
     <main class="app">
@@ -58,62 +58,6 @@
           </div>
           <output id="password-output" aria-live="polite">------</output>
           <p id="status" role="status"></p>
-        </div>
-      </section>
-
-      <section class="card admin-card" aria-labelledby="admin-form-title">
-        <header class="admin-card__header">
-          <h2 id="admin-form-title">管理者用クライアント追加フォーム</h2>
-          <p>取引先ルールを追加するには管理者パスワードが必要です。</p>
-        </header>
-
-        <form id="admin-form" autocomplete="off">
-          <div class="field">
-            <label for="admin-client-name">クライアント名</label>
-            <input
-              id="admin-client-name"
-              name="name"
-              type="text"
-              placeholder="例) YZさま"
-              aria-label="クライアント名"
-              required
-            />
-          </div>
-
-          <div class="field">
-            <label for="admin-client-prefix">接頭語</label>
-            <input
-              id="admin-client-prefix"
-              name="prefix"
-              type="text"
-              placeholder="例) YZC_OFF"
-              aria-label="接頭語"
-              required
-            />
-          </div>
-
-          <div class="field">
-            <label for="admin-password">管理者パスワード</label>
-            <input
-              id="admin-password"
-              name="admin_password"
-              type="password"
-              aria-label="管理者パスワード"
-              placeholder="管理者パスワードを入力"
-              required
-            />
-          </div>
-
-          <button id="admin-submit" type="submit" class="admin-button">
-            クライアントを追加
-          </button>
-        </form>
-
-        <p id="admin-message" role="alert"></p>
-
-        <div class="admin-list">
-          <h3>登録済みルール一覧</h3>
-          <ul id="admin-client-list"></ul>
         </div>
       </section>
 
@@ -227,8 +171,64 @@
 
         <p id="zip-status" role="status" class="zip-status"></p>
       </section>
+
+      <section class="card admin-card" aria-labelledby="admin-form-title">
+        <header class="admin-card__header">
+          <h2 id="admin-form-title">管理者用クライアント追加フォーム</h2>
+          <p>取引先ルールを追加するには管理者パスワードが必要です。</p>
+        </header>
+
+        <form id="admin-form" autocomplete="off">
+          <div class="field">
+            <label for="admin-client-name">クライアント名</label>
+            <input
+              id="admin-client-name"
+              name="name"
+              type="text"
+              placeholder="例) YZさま"
+              aria-label="クライアント名"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label for="admin-client-prefix">接頭語</label>
+            <input
+              id="admin-client-prefix"
+              name="prefix"
+              type="text"
+              placeholder="例) YZC_OFF"
+              aria-label="接頭語"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label for="admin-password">管理者パスワード</label>
+            <input
+              id="admin-password"
+              name="admin_password"
+              type="password"
+              aria-label="管理者パスワード"
+              placeholder="管理者パスワードを入力"
+              required
+            />
+          </div>
+
+          <button id="admin-submit" type="submit" class="admin-button">
+            クライアントを追加
+          </button>
+        </form>
+
+        <p id="admin-message" role="alert"></p>
+
+        <div class="admin-list">
+          <h3>登録済みルール一覧</h3>
+          <ul id="admin-client-list"></ul>
+        </div>
+      </section>
     </main>
 
-    <script src="script.js" defer></script>
+    <script src="{{ url_for('static', filename='script.js') }}" defer></script>
   </body>
 </html>
