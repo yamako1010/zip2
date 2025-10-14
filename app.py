@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import pyzipper
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file, session
+from supabase import Client, create_client
 from werkzeug.utils import secure_filename
 
 from password_rules import (
@@ -19,10 +20,19 @@ from password_rules import (
     delete_client_rule,
     generate_password,
     get_available_clients,
+    set_supabase_client,
 )
 
 try:
-    from config import ADMIN_PASSWORD
+    from config import (
+        ADMIN_PASSWORD,
+        FLASK_SECRET,
+        LOGIN_PASSWORD,
+        SESSION_COOKIE_SAMESITE,
+        SESSION_COOKIE_SECURE,
+        SUPABASE_SERVICE_ROLE_KEY,
+        SUPABASE_URL,
+    )
 except ImportError as exc:  # pragma: no cover - ensures clearer error for missing config
     raise RuntimeError("config.py が見つかりません。管理者パスワードを設定してください。") from exc
 
@@ -36,10 +46,37 @@ app = Flask(
 )
 MAX_UPLOAD_ARCHIVE_SIZE = 512 * 1024 * 1024  # 512MB
 
+app.secret_key = FLASK_SECRET
+app.config.update(
+    SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_SAMESITE=SESSION_COOKIE_SAMESITE,
+    MAX_CONTENT_LENGTH=MAX_UPLOAD_ARCHIVE_SIZE,
+)
+app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+
 resolved_path = Path(__file__).resolve()
 app.logger.info("[MonoZip] Using app.py at: %s", resolved_path)
 app.logger.info("[MonoZip] templates -> %s", TEMPLATES_DIR)
 app.logger.info("[MonoZip] static -> %s", STATIC_DIR)
+
+supabase_client: Client | None = None
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        app.logger.info("[MonoZip] Supabase client initialized.")
+    except Exception as exc:  # pragma: no cover - runtime safeguard
+        app.logger.exception("Supabase クライアントの初期化に失敗しました: %s", exc)
+else:
+    app.logger.warning(
+        "[MonoZip] Supabase 設定が見つかりません。ローカルの JSON 設定を使用します。"
+    )
+
+set_supabase_client(supabase_client)
+if supabase_client:
+    try:
+        get_available_clients()
+    except PasswordRuleError as exc:
+        app.logger.warning("Supabase 初期データ取得に失敗しました: %s", exc)
 
 
 def _build_default_client_payload() -> list[dict[str, str]]:
@@ -71,6 +108,53 @@ def parse_date(value: str | None) -> date:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError as exc:
         raise PasswordRuleError("日付は YYYY-MM-DD 形式で入力してください。") from exc
+
+
+_PUBLIC_PATHS = {"/login", "/logout"}
+_PUBLIC_PREFIXES = ("/static/", "/favicon.ico", "/api/public/")
+
+
+@app.before_request
+def enforce_authentication():
+    if request.method == "OPTIONS":
+        return None
+
+    path = request.path
+    if path in _PUBLIC_PATHS or any(path.startswith(prefix) for prefix in _PUBLIC_PREFIXES):
+        return None
+
+    if session.get("auth"):
+        return None
+
+    if request.accept_mimetypes.best == "application/json":
+        return jsonify({"error": "unauthorized"}), 401
+
+    return render_template("login.html"), 401
+
+
+@app.get("/login")
+def login_form() -> Any:
+    if session.get("auth"):
+        return render_template("index.html")
+    return render_template("login.html")
+
+
+@app.post("/login")
+def login() -> Any:
+    payload = request.get_json(silent=True) if request.is_json else None
+    password_value = (
+        payload.get("password") if isinstance(payload, dict) else request.form.get("password")
+    )
+    if (password_value or "").strip() == LOGIN_PASSWORD:
+        session["auth"] = True
+        return jsonify({"ok": True})
+    return jsonify({"error": "invalid password"}), 403
+
+
+@app.post("/logout")
+def logout() -> Any:
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @app.get("/api/clients")
@@ -141,7 +225,7 @@ def api_add_client() -> Any:
         app.logger.warning("管理者パスワード不一致のためクライアント追加を拒否しました。")
         return (
             jsonify({"success": False, "error": "管理者パスワードが正しくありません。"}),
-            401,
+            403,
         )
 
     try:
@@ -161,12 +245,9 @@ def api_add_client() -> Any:
     return jsonify(response), status
 
 
-@app.route("/api/zip", methods=["GET", "POST"])
+@app.post("/api/zip")
 def api_zip() -> Any:
-    print(f"Received method: {request.method}")
     app.logger.debug("/api/zip invoked via %s", request.method)
-    if request.method != "POST":
-        return jsonify({"error": "POST メソッドを使用してください。"}), 405
 
     form = request.form
     files = request.files.getlist("files")
@@ -176,18 +257,13 @@ def api_zip() -> Any:
         return jsonify({"error": "1つ以上のファイルを選択してください。"}), 400
 
     password = (form.get("password") or "").strip()
-    password_confirm = (form.get("password_confirm") or "").strip()
-    if not password or not password_confirm:
+    if not password:
         app.logger.warning("ZIP生成リクエストでパスワード未入力。")
-        return jsonify({"error": "パスワードと確認用パスワードを入力してください。"}), 400
+        return jsonify({"error": "パスワードを入力してください。"}), 400
 
-    if password != password_confirm:
-        app.logger.warning("ZIP生成リクエストで確認用パスワードが不一致。")
-        return jsonify({"error": "パスワードが一致しません。"}), 400
-
-    algo = (form.get("algo") or "AES-256").upper()
-    if algo not in {"AES-256", "ZIPCRYPTO"}:
-        app.logger.warning("不正な暗号方式が指定されました: %s", algo)
+    mode = (form.get("mode") or "aes").strip().lower()
+    if mode not in {"aes", "zipcrypto"}:
+        app.logger.warning("不正な暗号方式が指定されました: %s", mode)
         return jsonify({"error": "対応していない暗号方式が指定されました。"}), 400
 
     requested_name = (form.get("zip_name") or "").strip()
@@ -207,8 +283,11 @@ def api_zip() -> Any:
         if not safe_name:
             safe_name = next(fallback_names)
 
-        data = storage.read()
-        storage.close()
+        try:
+            storage.stream.seek(0)
+            data = storage.read()
+        finally:
+            storage.close()
 
         if not data:
             continue
@@ -238,7 +317,7 @@ def api_zip() -> Any:
     password_bytes = password.encode("utf-8")
 
     try:
-        if algo == "AES-256":
+        if mode == "aes":
             with pyzipper.AESZipFile(
                 buffer,
                 mode="w",
@@ -249,11 +328,12 @@ def api_zip() -> Any:
                 archive.setencryption(pyzipper.WZ_AES, nbits=256)
                 for filename, data in collected_files:
                     archive.writestr(filename, data)
-        else:  # ZipCrypto
+        else:
             with pyzipper.ZipFile(
                 buffer, mode="w", compression=pyzipper.ZIP_DEFLATED
             ) as archive:
                 archive.setpassword(password_bytes)
+                archive.setencryption(pyzipper.ZIP_CRYPTO)
                 for filename, data in collected_files:
                     archive.writestr(filename, data)
     except Exception as exc:  # pragma: no cover - runtime safeguard
@@ -262,11 +342,11 @@ def api_zip() -> Any:
 
     buffer.seek(0)
     app.logger.info(
-        "ZIP生成成功: %s (%d files, %d bytes, algo=%s)",
+        "ZIP生成成功: %s (%d files, %d bytes, mode=%s)",
         normalized_name,
         len(collected_files),
         total_size,
-        algo,
+        mode,
     )
     return send_file(
         buffer,
@@ -295,7 +375,7 @@ def api_delete_client() -> Any:
     if admin_password != ADMIN_PASSWORD:
         return (
             jsonify({"success": False, "error": "管理者パスワードが正しくありません。"}),
-            401,
+            403,
         )
 
     try:
@@ -316,9 +396,7 @@ def api_delete_client() -> Any:
 @app.get("/")
 def root() -> Any:
     template_path = TEMPLATES_DIR / "index.html"
-    log_message = f"Rendering template: {template_path}"
-    print(log_message)
-    app.logger.info(log_message)
+    app.logger.info("Rendering template: %s", template_path)
     return render_template("index.html")
 
 

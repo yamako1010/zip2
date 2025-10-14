@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MonoZip Web Login</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b0b0f;
+        color: #f6f6f6;
+      }
+      main {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+      form {
+        background: rgba(20, 20, 26, 0.9);
+        padding: 2.5rem 3rem;
+        border-radius: 16px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        text-align: center;
+        width: min(320px, 90vw);
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 1.5rem;
+      }
+      input[type="password"] {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.08);
+        color: inherit;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+      }
+      button {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: none;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #f1c777, #be983e);
+        color: #0b0b0f;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+      p {
+        margin: 1rem 0 0;
+        color: #ff8787;
+        min-height: 1.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <form id="login">
+        <h1>MonoZip Web</h1>
+        <input
+          type="password"
+          name="password"
+          placeholder="Password"
+          autocomplete="current-password"
+          autofocus
+        />
+        <button type="submit">Login</button>
+        <p id="msg"></p>
+      </form>
+    </main>
+    <script>
+      const form = document.getElementById("login");
+      const message = document.getElementById("msg");
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        message.textContent = "";
+        const formData = new FormData(form);
+        const passwordValue = formData.get("password");
+        try {
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ password: passwordValue }),
+          });
+          if (response.ok) {
+            window.location.href = "/";
+            return;
+          }
+          message.textContent = "パスワードが違います";
+        } catch (error) {
+          message.textContent = "ログインに失敗しました。再試行してください。";
+        }
+      });
+    </script>
+  </body>
+</html>

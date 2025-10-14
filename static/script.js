@@ -20,8 +20,7 @@ const zipBrowseBtn = document.getElementById("zip-browse-btn");
 const zipFileList = document.getElementById("zip-file-list");
 const zipNameInput = document.getElementById("zip-name");
 const zipPasswordInput = document.getElementById("zip-password");
-const zipPasswordConfirmInput = document.getElementById("zip-password-confirm");
-const zipAlgoSelect = document.getElementById("zip-algo");
+const zipModeSelect = document.getElementById("zip-mode");
 const zipOsSelect = document.getElementById("zip-os-hint");
 const zipAlgoHint = document.getElementById("zip-algo-hint");
 const zipOsHintText = document.getElementById("zip-os-hint-text");
@@ -36,13 +35,26 @@ const ZIP_SIZE_LIMIT = 512 * 1024 * 1024; // 512MB
 
 async function fetchClients() {
   try {
-    const response = await fetch("/api/clients");
+    const response = await fetch("/api/clients", {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
     cachedClients = data.clients ?? [];
     populateClients(cachedClients);
+    if (data.fallback && statusEl) {
+      statusEl.textContent =
+        "Supabase に接続できなかったため、ローカルの既定クライアントを表示しています。";
+      statusEl.dataset.state = "warning";
+    }
   } catch (error) {
     console.error("Failed to load clients", error);
     clientSelect.innerHTML =
@@ -174,6 +186,7 @@ async function triggerGeneration() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({
         clientKey,
@@ -181,6 +194,10 @@ async function triggerGeneration() {
         customInput: isCustom ? trimmedCustomValue : undefined,
       }),
     });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
 
     const result = await response.json();
     if (!response.ok) {
@@ -298,14 +315,22 @@ async function handleDeleteClient(target) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({
         key,
         admin_password: password,
       }),
     });
-
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    if (response.status === 403) {
+      setAdminMessage(result.error || "認証に失敗しました。", "error");
+      return;
+    }
     if (!response.ok) {
       throw new Error(result.error || "削除に失敗しました。");
     }
@@ -384,9 +409,7 @@ function updateZipFileList() {
 function updateZipGenerateState() {
   if (!zipGenerateBtn) return;
   const hasFiles = zipFilesInput && zipFilesInput.files && zipFilesInput.files.length;
-  const nameValue = (zipNameInput?.value || "").trim();
   const password = zipPasswordInput?.value || "";
-  const passwordConfirm = zipPasswordConfirmInput?.value || "";
   const totalSize = Array.from(zipFilesInput?.files || []).reduce(
     (acc, file) => acc + file.size,
     0
@@ -394,34 +417,31 @@ function updateZipGenerateState() {
 
   const canGenerate =
     Boolean(hasFiles) &&
-    Boolean(nameValue) &&
     password.length > 0 &&
-    passwordConfirm.length > 0 &&
-    password === passwordConfirm &&
     totalSize <= ZIP_SIZE_LIMIT;
 
   zipGenerateBtn.disabled = !canGenerate;
 }
 
 function updateZipHints() {
-  if (!zipAlgoHint || !zipAlgoSelect) return;
+  if (!zipAlgoHint || !zipModeSelect) return;
 
-  const algo = zipAlgoSelect.value;
+  const mode = zipModeSelect.value || "aes";
   const os = zipOsSelect?.value || "windows";
 
-  if (algo === "AES-256") {
+  if (mode === "aes") {
     zipAlgoHint.textContent =
-      "AES-256で暗号化します。Windows標準のエクスプローラーでは解凍できないため、7-Zip（推奨）またはWinZipをご利用ください。";
+      "AESで暗号化します。Windows標準のエクスプローラーでは解凍できないため、7-Zip（推奨）またはWinZipをご利用ください。";
     zipAlgoHint.dataset.state = "success";
   } else {
     zipAlgoHint.textContent =
-      "ZipCryptoは互換性重視の方式です。暗号強度は低いため重要情報にはAES-256を推奨します。";
+      "ZipCryptoは互換性重視の方式です。暗号強度は低いため重要情報にはAESを推奨します。";
     zipAlgoHint.dataset.state = "warning";
   }
 
   if (zipOsHintText) {
     if (os === "windows") {
-      if (algo === "AES-256") {
+      if (mode === "aes") {
         zipOsHintText.textContent =
           "WindowsでAES暗号ZIPを開くには7-Zipなどの専用ソフトが必要です。";
         zipOsHintText.dataset.state = "warning";
@@ -431,7 +451,7 @@ function updateZipHints() {
         zipOsHintText.dataset.state = "warning";
       }
     } else {
-      if (algo === "AES-256") {
+      if (mode === "aes") {
         zipOsHintText.textContent =
           "macOS FinderはAES暗号ZIPに概ね対応していますが、最新環境での利用を推奨します。";
         zipOsHintText.dataset.state = "info";
@@ -468,7 +488,7 @@ async function submitZipForm(event) {
   updateZipGenerateState();
   if (zipGenerateBtn.disabled) {
     setZipStatus(
-      "必須入力が不足しています。ファイルとパスワード（確認一致）、ZIP名を確認してください。",
+      "必須入力が不足しています。ファイルとパスワードを確認してください。",
       "error"
     );
     return;
@@ -485,13 +505,16 @@ async function submitZipForm(event) {
     }
     formData.append("zip_name", (zipNameInput?.value || "").trim());
     formData.append("password", zipPasswordInput?.value || "");
-    formData.append("password_confirm", zipPasswordConfirmInput?.value || "");
-    formData.append("algo", zipAlgoSelect?.value || "AES-256");
+    formData.append("mode", zipModeSelect?.value || "aes");
 
     const response = await fetch("/api/zip", {
       method: "POST",
       body: formData,
     });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
 
     const contentType = response.headers.get("content-type") || "";
     if (contentType.includes("application/zip")) {
@@ -555,6 +578,7 @@ async function submitAdminForm(event) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({
         name,
@@ -562,8 +586,15 @@ async function submitAdminForm(event) {
         admin_password: password,
       }),
     });
-
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    if (response.status === 403) {
+      setAdminMessage(result.error || "認証に失敗しました。", "error");
+      return;
+    }
     if (!response.ok) {
       throw new Error(result.error || "追加に失敗しました。");
     }
@@ -663,12 +694,8 @@ document.addEventListener("DOMContentLoaded", () => {
     zipPasswordInput.addEventListener("input", updateZipGenerateState);
   }
 
-  if (zipPasswordConfirmInput) {
-    zipPasswordConfirmInput.addEventListener("input", updateZipGenerateState);
-  }
-
-  if (zipAlgoSelect) {
-    zipAlgoSelect.addEventListener("change", () => {
+  if (zipModeSelect) {
+    zipModeSelect.addEventListener("change", () => {
       updateZipHints();
     });
   }

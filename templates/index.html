@@ -121,30 +121,17 @@
             </div>
           </div>
 
-          <div class="field field--password">
-            <label for="zip-password-confirm">パスワード確認</label>
-            <div class="password-input">
-              <input
-                id="zip-password-confirm"
-                name="password_confirm"
-                type="password"
-                aria-label="ZIPパスワード確認"
-                autocomplete="new-password"
-                required
-              />
-              <button type="button" class="password-toggle" data-target="zip-password-confirm">
-                表示
-              </button>
-            </div>
-          </div>
-
           <div class="field">
-            <label for="zip-algo">暗号方式</label>
-            <select id="zip-algo" name="algo" aria-label="暗号方式">
-              <option value="AES-256" selected>AES-256（推奨）</option>
-              <option value="ZipCrypto">ZipCrypto（Windows標準互換）</option>
+            <label for="zip-mode">暗号方式</label>
+            <select id="zip-mode" name="mode" aria-label="暗号方式">
+              <option value="aes" selected>AES（高い安全性/7-Zip・WinZip推奨）</option>
+              <option value="zipcrypto">ZipCrypto（Windows標準互換）</option>
             </select>
           </div>
+
+          <p class="zip-hint" data-state="warning">
+            Windows標準の解凍機能で開く場合は ZipCrypto を、より強固な暗号化には AES を選択してください。
+          </p>
 
           <div class="field">
             <label for="zip-os-hint">ご利用環境</label>
