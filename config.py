@@ -1,0 +1,10 @@
+import os
+
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SSP")
+LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "SSP")
+FLASK_SECRET = os.getenv("FLASK_SECRET", "change-me")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true"
+SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
