@@ -333,7 +333,6 @@ def api_zip() -> Any:
                 buffer, mode="w", compression=pyzipper.ZIP_DEFLATED
             ) as archive:
                 archive.setpassword(password_bytes)
-                archive.setencryption(pyzipper.ZIP_CRYPTO)
                 for filename, data in collected_files:
                     archive.writestr(filename, data)
     except Exception as exc:  # pragma: no cover - runtime safeguard
