@@ -399,9 +399,13 @@ def api_zip() -> Any:
                 for file_path in sorted(zip_root.rglob("*")):
                     if file_path.is_file():
                         source_paths.append(str(file_path))
-                        archive_names.append(
-                            str(file_path.relative_to(tmp_path)).replace("\\", "/")
-                        )
+                        # ZIP 内のパスを MonoZip_日時/ファイル名 に統一する
+                        archive_names.append(f"{folder_name}/{file_path.name}")
+
+                app.logger.info("=== DEBUG archive_names ===")
+                for arcname in archive_names:
+                    app.logger.info("arcname: %s", arcname)
+                app.logger.info("===========================")
 
                 zip_path = tmp_path / normalized_name
                 pyminizip.compress_multiple(
