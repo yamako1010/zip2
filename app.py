@@ -389,14 +389,19 @@ def api_zip() -> Any:
                 tmp_path = Path(tmp_dir)
                 zip_root = tmp_path / folder_name
                 zip_root.mkdir(parents=True, exist_ok=True)
-                source_paths: list[str] = []
-                archive_names: list[str] = []
                 for filename, data in collected_files:
                     file_path = zip_root / filename
                     file_path.parent.mkdir(parents=True, exist_ok=True)
                     file_path.write_bytes(data)
-                    source_paths.append(str(file_path))
-                    archive_names.append(f"{folder_name}/{filename}")
+
+                source_paths: list[str] = []
+                archive_names: list[str] = []
+                for file_path in zip_root.rglob("*"):
+                    if file_path.is_file():
+                        source_paths.append(str(file_path))
+                        archive_names.append(
+                            str(file_path.relative_to(tmp_path))
+                        )
 
                 zip_path = tmp_path / normalized_name
                 pyminizip.compress_multiple(
