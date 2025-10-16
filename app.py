@@ -366,6 +366,8 @@ def api_zip() -> Any:
         app.logger.warning("ZIP生成リクエストに有効ファイルがありませんでした。")
         return jsonify({"error": "有効なファイルが選択されていません。"}), 400
 
+    folder_suffix = datetime.now().strftime("%Y%m%d_%H%M")
+    folder_name = f"MonoZip_{folder_suffix}"
     password_bytes = password.encode("utf-8")
     zip_stream: io.BytesIO | None = None
 
@@ -381,17 +383,20 @@ def api_zip() -> Any:
                 archive.setpassword(password_bytes)
                 archive.setencryption(pyzipper.WZ_AES, nbits=256)
                 for filename, data in collected_files:
-                    archive.writestr(filename, data)
+                    archive.writestr(f"{folder_name}/{filename}", data)
         else:
             with tempfile.TemporaryDirectory(prefix="monozip-", dir="/tmp") as tmp_dir:
                 tmp_path = Path(tmp_dir)
+                zip_root = tmp_path / folder_name
+                zip_root.mkdir(parents=True, exist_ok=True)
                 source_paths: list[str] = []
                 archive_names: list[str] = []
                 for filename, data in collected_files:
-                    file_path = tmp_path / filename
+                    file_path = zip_root / filename
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
                     file_path.write_bytes(data)
                     source_paths.append(str(file_path))
-                    archive_names.append(filename)
+                    archive_names.append(f"{folder_name}/{filename}")
 
                 zip_path = tmp_path / normalized_name
                 pyminizip.compress_multiple(
