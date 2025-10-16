@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import io
+import tempfile
 from datetime import date, datetime
 from itertools import count
 from pathlib import Path
 from typing import Any
 
+import pyminizip
 import pyzipper
 from flask import Flask, jsonify, render_template, request, send_file, session
 from supabase import Client, create_client
@@ -364,13 +366,14 @@ def api_zip() -> Any:
         app.logger.warning("ZIP生成リクエストに有効ファイルがありませんでした。")
         return jsonify({"error": "有効なファイルが選択されていません。"}), 400
 
-    buffer = io.BytesIO()
     password_bytes = password.encode("utf-8")
+    zip_stream: io.BytesIO | None = None
 
     try:
         if mode == "aes":
+            zip_stream = io.BytesIO()
             with pyzipper.AESZipFile(
-                buffer,
+                zip_stream,
                 mode="w",
                 compression=pyzipper.ZIP_DEFLATED,
                 encryption=pyzipper.WZ_AES,
@@ -380,17 +383,34 @@ def api_zip() -> Any:
                 for filename, data in collected_files:
                     archive.writestr(filename, data)
         else:
-            with pyzipper.ZipFile(
-                buffer, mode="w", compression=pyzipper.ZIP_DEFLATED
-            ) as archive:
-                archive.setpassword(password_bytes)
+            with tempfile.TemporaryDirectory(prefix="monozip-", dir="/tmp") as tmp_dir:
+                tmp_path = Path(tmp_dir)
+                source_paths: list[str] = []
+                archive_names: list[str] = []
                 for filename, data in collected_files:
-                    archive.writestr(filename, data)
-    except Exception as exc:  # pragma: no cover - runtime safeguard
-        app.logger.exception("ZIP生成に失敗しました: %s", exc)
+                    file_path = tmp_path / filename
+                    file_path.write_bytes(data)
+                    source_paths.append(str(file_path))
+                    archive_names.append(filename)
+
+                zip_path = tmp_path / normalized_name
+                pyminizip.compress_multiple(
+                    source_paths,
+                    archive_names,
+                    str(zip_path),
+                    password,
+                    5,
+                )
+                zip_stream = io.BytesIO(zip_path.read_bytes())
+    except Exception:  # pragma: no cover - runtime safeguard
+        app.logger.exception("ZIP生成に失敗しました (mode=%s)", mode)
         return jsonify({"error": "ZIPファイルの生成に失敗しました。"}), 500
 
-    buffer.seek(0)
+    if zip_stream is None:
+        app.logger.error("ZIP生成に失敗しました (mode=%s): 出力ストリームが空です。", mode)
+        return jsonify({"error": "ZIPファイルの生成に失敗しました。"}), 500
+
+    zip_stream.seek(0)
     app.logger.info(
         "ZIP生成成功: %s (%d files, %d bytes, mode=%s)",
         normalized_name,
@@ -399,7 +419,7 @@ def api_zip() -> Any:
         mode,
     )
     return send_file(
-        buffer,
+        zip_stream,
         mimetype="application/zip",
         as_attachment=True,
         download_name=normalized_name,
