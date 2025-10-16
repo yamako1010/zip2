@@ -1,6 +1,8 @@
+
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 from datetime import date, datetime
 from itertools import count
@@ -333,6 +335,7 @@ def api_zip() -> Any:
     for storage in files:
         original_name = storage.filename or ""
         safe_name = secure_filename(original_name)
+        safe_name = os.path.basename(safe_name)
         if not safe_name:
             safe_name = next(fallback_names)
 
