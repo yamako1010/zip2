@@ -396,11 +396,11 @@ def api_zip() -> Any:
 
                 source_paths: list[str] = []
                 archive_names: list[str] = []
-                for file_path in zip_root.rglob("*"):
+                for file_path in sorted(zip_root.rglob("*")):
                     if file_path.is_file():
                         source_paths.append(str(file_path))
                         archive_names.append(
-                            str(file_path.relative_to(tmp_path))
+                            str(file_path.relative_to(tmp_path)).replace("\\", "/")
                         )
 
                 zip_path = tmp_path / normalized_name
