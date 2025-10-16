@@ -166,6 +166,7 @@
         </header>
 
         <form id="admin-form" autocomplete="off">
+          <input id="admin-client-id" type="hidden" name="client_id" />
           <div class="field">
             <label for="admin-client-name">クライアント名</label>
             <input
@@ -191,6 +192,17 @@
           </div>
 
           <div class="field">
+            <label for="admin-client-suffix">接尾語ルール</label>
+            <input
+              id="admin-client-suffix"
+              name="suffix_rule"
+              type="text"
+              placeholder="例) 日付（月と日）"
+              aria-label="接尾語ルール"
+            />
+          </div>
+
+          <div class="field">
             <label for="admin-password">管理者パスワード</label>
             <input
               id="admin-password"
@@ -202,9 +214,34 @@
             />
           </div>
 
-          <button id="admin-submit" type="submit" class="admin-button">
-            クライアントを追加
-          </button>
+          <div class="admin-actions">
+            <button id="admin-create-btn" type="submit" class="admin-button">
+              新規追加
+            </button>
+            <button
+              id="admin-update-btn"
+              type="button"
+              class="admin-button admin-button--secondary"
+              disabled
+            >
+              上書き
+            </button>
+            <button
+              id="admin-delete-btn"
+              type="button"
+              class="admin-button admin-button--danger"
+              disabled
+            >
+              削除
+            </button>
+            <button
+              id="admin-reset-btn"
+              type="button"
+              class="admin-button admin-button--ghost"
+            >
+              リセット
+            </button>
+          </div>
         </form>
 
         <p id="admin-message" role="alert"></p>

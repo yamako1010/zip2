@@ -14,6 +14,12 @@ const adminClientPrefixInput = document.getElementById("admin-client-prefix");
 const adminPasswordInput = document.getElementById("admin-password");
 const adminMessage = document.getElementById("admin-message");
 const adminClientList = document.getElementById("admin-client-list");
+const adminClientIdInput = document.getElementById("admin-client-id");
+const adminSuffixRuleInput = document.getElementById("admin-client-suffix");
+const adminCreateBtn = document.getElementById("admin-create-btn");
+const adminUpdateBtn = document.getElementById("admin-update-btn");
+const adminDeleteBtn = document.getElementById("admin-delete-btn");
+const adminResetBtn = document.getElementById("admin-reset-btn");
 const zipForm = document.getElementById("zip-form");
 const zipFilesInput = document.getElementById("zip-files");
 const zipBrowseBtn = document.getElementById("zip-browse-btn");
@@ -30,7 +36,10 @@ const zipStatus = document.getElementById("zip-status");
 const zipDropZone = document.getElementById("zip-drop-zone");
 
 const CUSTOM_CLIENT_KEY = "custom";
+const DEFAULT_SUFFIX_RULE = "日付（月と日）";
 let cachedClients = [];
+let selectedAdminClientId = "";
+let selectedAdminClient = null;
 const ZIP_SIZE_LIMIT = 512 * 1024 * 1024; // 512MB
 
 async function fetchClients() {
@@ -71,6 +80,7 @@ function populateClients(clients) {
       '<option value="" disabled selected>未登録</option>';
     statusEl.textContent = "使用可能なクライアントが登録されていません。";
     renderAdminClientList([]);
+    resetAdminForm({ keepPassword: true, suppressMessage: true });
     return;
   }
 
@@ -101,12 +111,13 @@ function populateClients(clients) {
 
   const availableKeys = new Set(clients.map((client) => client.key));
   if (availableKeys.has(previousSelection)) {
-    clientSelect.value = previousSelection;
+      clientSelect.value = previousSelection;
   } else {
     clientSelect.selectedIndex = 0;
   }
   toggleCustomField();
-  renderAdminClientList(clients);
+  renderAdminClientList(cachedClients);
+  syncSelectedAdminClient();
 }
 
 function resetDateToToday({ silent = false } = {}) {
@@ -264,21 +275,29 @@ function renderAdminClientList(clients) {
     const item = document.createElement("li");
     const label = client.label || client.name || client.key;
     const prefix = client.prefix || "";
+    const suffixRule = client.suffix_rule || client.suffixRule || DEFAULT_SUFFIX_RULE;
     item.classList.add("admin-list__item");
+    item.dataset.key = client.key;
+    if (client.key === selectedAdminClientId) {
+      item.classList.add("is-selected");
+    }
+
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.classList.add("admin-list__select");
+    selectButton.dataset.key = client.key;
 
     const info = document.createElement("span");
     info.classList.add("admin-list__label");
-    info.textContent = `${label}: ${prefix}`;
+    info.textContent = label;
 
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.classList.add("admin-delete-button");
-    deleteButton.dataset.key = client.key;
-    deleteButton.dataset.label = label;
-    deleteButton.textContent = "削除";
+    const rule = document.createElement("span");
+    rule.classList.add("admin-list__rule");
+    rule.textContent = `${prefix} + ${suffixRule}`;
 
-    item.appendChild(info);
-    item.appendChild(deleteButton);
+    selectButton.appendChild(info);
+    selectButton.appendChild(rule);
+    item.appendChild(selectButton);
     adminClientList.appendChild(item);
   }
 }
@@ -293,22 +312,182 @@ function setAdminMessage(message, state) {
   }
 }
 
-async function handleDeleteClient(target) {
-  const key = target.dataset.key;
-  const label = target.dataset.label;
-  const password = adminPasswordInput.value;
+function updateAdminControlsState() {
+  const hasSelection = Boolean(selectedAdminClientId);
+  if (adminUpdateBtn) {
+    adminUpdateBtn.disabled = !hasSelection;
+  }
+  if (adminDeleteBtn) {
+    adminDeleteBtn.disabled = !hasSelection;
+  }
+}
+
+function getAdminFormValues() {
+  const keyValue =
+    (adminClientIdInput?.value || selectedAdminClientId || "").trim();
+  return {
+    key: keyValue,
+    name: adminClientNameInput?.value.trim() || "",
+    prefix: adminClientPrefixInput?.value.trim() || "",
+    suffixRule: adminSuffixRuleInput?.value.trim() || "",
+    adminPassword: adminPasswordInput?.value || "",
+  };
+}
+
+function resetAdminForm({
+  keepPassword = false,
+  suppressMessage = false,
+} = {}) {
+  selectedAdminClientId = "";
+  selectedAdminClient = null;
+  if (adminClientIdInput) adminClientIdInput.value = "";
+  if (adminClientNameInput) adminClientNameInput.value = "";
+  if (adminClientPrefixInput) adminClientPrefixInput.value = "";
+  if (adminSuffixRuleInput) adminSuffixRuleInput.value = DEFAULT_SUFFIX_RULE;
+  if (!keepPassword && adminPasswordInput) {
+    adminPasswordInput.value = "";
+  }
+  if (!suppressMessage) {
+    setAdminMessage("", null);
+  }
+  renderAdminClientList(cachedClients);
+  updateAdminControlsState();
+}
+
+function syncSelectedAdminClient() {
+  if (!selectedAdminClientId) {
+    updateAdminControlsState();
+    if (adminClientIdInput) adminClientIdInput.value = "";
+    return;
+  }
+
+  const match = cachedClients.find(
+    (client) => client.key === selectedAdminClientId
+  );
+  if (!match) {
+    resetAdminForm({ keepPassword: true, suppressMessage: true });
+    return;
+  }
+
+  selectedAdminClient = match;
+  if (adminClientIdInput) adminClientIdInput.value = match.key || "";
+  if (adminClientNameInput && !adminClientNameInput.matches(":focus")) {
+    adminClientNameInput.value = match.label || match.name || "";
+  }
+  if (adminClientPrefixInput && !adminClientPrefixInput.matches(":focus")) {
+    adminClientPrefixInput.value = match.prefix || "";
+  }
+  if (adminSuffixRuleInput && !adminSuffixRuleInput.matches(":focus")) {
+    adminSuffixRuleInput.value =
+      match.suffix_rule || match.suffixRule || DEFAULT_SUFFIX_RULE;
+  }
+  updateAdminControlsState();
+}
+
+function selectAdminClient(key) {
+  if (!key) return;
+  const match = cachedClients.find((client) => client.key === key);
+  if (!match) {
+    setAdminMessage("選択したクライアントが見つかりません。", "error");
+    return;
+  }
+
+  selectedAdminClientId = match.key;
+  selectedAdminClient = match;
+  if (adminClientIdInput) adminClientIdInput.value = match.key || "";
+  if (adminClientNameInput) {
+    adminClientNameInput.value = match.label || match.name || "";
+  }
+  if (adminClientPrefixInput) {
+    adminClientPrefixInput.value = match.prefix || "";
+  }
+  if (adminSuffixRuleInput) {
+    adminSuffixRuleInput.value =
+      match.suffix_rule || match.suffixRule || DEFAULT_SUFFIX_RULE;
+  }
+  renderAdminClientList(cachedClients);
+  updateAdminControlsState();
+  setAdminMessage(`${match.label || match.name} を編集中です。`, "info");
+}
+
+async function submitAdminUpdate() {
+  const { key, name, prefix, suffixRule, adminPassword } =
+    getAdminFormValues();
 
   if (!key) {
-    setAdminMessage("削除対象が見つかりません。", "error");
+    setAdminMessage("上書き対象を選択してください。", "error");
     return;
   }
 
-  if (!password) {
-    setAdminMessage("削除には管理者パスワードを入力してください。", "error");
+  if (!name || !prefix) {
+    setAdminMessage("クライアント名と接頭語を入力してください。", "error");
     return;
   }
 
-  setAdminMessage(`${label} を削除しています...`, "info");
+  if (!adminPassword) {
+    setAdminMessage("管理者パスワードを入力してください。", "error");
+    return;
+  }
+
+  setAdminMessage("更新しています...", "info");
+
+  try {
+    const response = await fetch("/api/update_client", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        key,
+        name,
+        prefix,
+        suffix_rule: suffixRule,
+        admin_password: adminPassword,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    if (response.status === 403) {
+      setAdminMessage(result.error || "認証に失敗しました。", "error");
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(result.error || "更新に失敗しました。");
+    }
+
+    selectedAdminClientId = result.client?.key || key;
+    setAdminMessage(result.message || "更新しました。", "success");
+    await fetchClients();
+    syncSelectedAdminClient();
+  } catch (error) {
+    console.error("Failed to update client", error);
+    setAdminMessage(error.message || "クライアントの更新に失敗しました。", "error");
+  }
+}
+
+async function submitAdminDelete() {
+  const { key, adminPassword } = getAdminFormValues();
+  if (!key) {
+    setAdminMessage("削除対象を選択してください。", "error");
+    return;
+  }
+  if (!adminPassword) {
+    setAdminMessage("削除には管理者パスワードが必要です。", "error");
+    return;
+  }
+
+  const target = cachedClients.find((client) => client.key === key);
+  const targetLabel = target?.label || target?.name || "選択中のクライアント";
+  const confirmed = window.confirm(`${targetLabel} を本当に削除しますか？`);
+  if (!confirmed) {
+    return;
+  }
+
+  setAdminMessage("削除しています...", "info");
 
   try {
     const response = await fetch("/api/delete_client", {
@@ -319,7 +498,7 @@ async function handleDeleteClient(target) {
       },
       body: JSON.stringify({
         key,
-        admin_password: password,
+        admin_password: adminPassword,
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -335,11 +514,13 @@ async function handleDeleteClient(target) {
       throw new Error(result.error || "削除に失敗しました。");
     }
 
-    setAdminMessage(result.message || `${label} を削除しました。`, "success");
+    setAdminMessage(result.message || `${targetLabel} を削除しました。`, "success");
+    resetAdminForm({ keepPassword: true, suppressMessage: true });
     await fetchClients();
+    setAdminMessage(result.message || `${targetLabel} を削除しました。`, "success");
   } catch (error) {
     console.error("Failed to delete client", error);
-    setAdminMessage(error.message, "error");
+    setAdminMessage(error.message || "クライアントの削除に失敗しました。", "error");
   }
 }
 
@@ -562,11 +743,9 @@ async function submitZipForm(event) {
 async function submitAdminForm(event) {
   event.preventDefault();
 
-  const name = adminClientNameInput.value.trim();
-  const prefix = adminClientPrefixInput.value.trim();
-  const password = adminPasswordInput.value;
+  const { name, prefix, suffixRule, adminPassword } = getAdminFormValues();
 
-  if (!name || !prefix || !password) {
+  if (!name || !prefix || !adminPassword) {
     setAdminMessage("全ての項目を入力してください。", "error");
     return;
   }
@@ -583,7 +762,8 @@ async function submitAdminForm(event) {
       body: JSON.stringify({
         name,
         prefix,
-        admin_password: password,
+        suffix_rule: suffixRule,
+        admin_password: adminPassword,
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -602,9 +782,20 @@ async function submitAdminForm(event) {
     const state = result.success ? "success" : "warning";
     setAdminMessage(result.message || "処理が完了しました。", state);
 
-    adminForm.reset();
-    adminClientNameInput.focus();
+    if (result.client?.key) {
+      selectedAdminClientId = result.client.key;
+    }
+    if (result.success) {
+      if (adminClientNameInput) adminClientNameInput.value = "";
+      if (adminClientPrefixInput) adminClientPrefixInput.value = "";
+      if (adminSuffixRuleInput) adminSuffixRuleInput.value = DEFAULT_SUFFIX_RULE;
+    }
     await fetchClients();
+    if (selectedAdminClientId) {
+      syncSelectedAdminClient();
+    } else {
+      updateAdminControlsState();
+    }
   } catch (error) {
     console.error("Failed to add client", error);
     setAdminMessage(error.message, "error");
@@ -633,17 +824,32 @@ document.addEventListener("DOMContentLoaded", () => {
       passwordOutput.textContent = "------";
     }
   });
+  if (adminSuffixRuleInput && !adminSuffixRuleInput.value) {
+    adminSuffixRuleInput.value = DEFAULT_SUFFIX_RULE;
+  }
+  updateAdminControlsState();
   if (adminForm) {
     adminForm.addEventListener("submit", submitAdminForm);
+  }
+  if (adminUpdateBtn) {
+    adminUpdateBtn.addEventListener("click", submitAdminUpdate);
+  }
+  if (adminDeleteBtn) {
+    adminDeleteBtn.addEventListener("click", submitAdminDelete);
+  }
+  if (adminResetBtn) {
+    adminResetBtn.addEventListener("click", () =>
+      resetAdminForm({ keepPassword: true })
+    );
   }
   if (adminClientList) {
     adminClientList.addEventListener("click", (event) => {
       const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        target.classList.contains("admin-delete-button")
-      ) {
-        handleDeleteClient(target);
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest(".admin-list__select");
+      if (button instanceof HTMLElement) {
+        const key = button.dataset.key;
+        selectAdminClient(key || "");
       }
     });
   }

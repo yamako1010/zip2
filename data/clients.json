@@ -1,12 +1,14 @@
 [
   {
     "key": "am",
-    "name": "AMさま",
-    "prefix": "AMS_KTC"
+    "name": "AM様",
+    "prefix": "AMS_KTC",
+    "suffix_rule": "日付（月と日）"
   },
   {
     "key": "af",
-    "name": "AFさま",
-    "prefix": "KTC_SSP"
+    "name": "AF様",
+    "prefix": "KTC_SSP",
+    "suffix_rule": "日付（月と日）"
   }
 ]

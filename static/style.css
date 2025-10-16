@@ -172,9 +172,61 @@ body {
   box-shadow: 0 14px 28px rgba(212, 175, 55, 0.4);
 }
 
+.admin-button--secondary {
+  background: linear-gradient(135deg, #3a3a3a, #585858);
+  color: #f7f1d5;
+  box-shadow: none;
+}
+
+.admin-button--secondary:hover,
+.admin-button--secondary:focus {
+  background: linear-gradient(135deg, #4b4b4b, #696969);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.admin-button--danger {
+  background: linear-gradient(135deg, #a8323b, #d7525c);
+  color: #fff5f5;
+  box-shadow: 0 10px 24px rgba(216, 82, 92, 0.45);
+}
+
+.admin-button--danger:hover,
+.admin-button--danger:focus {
+  background: linear-gradient(135deg, #c23b46, #f06874);
+  box-shadow: 0 14px 28px rgba(216, 82, 92, 0.5);
+}
+
+.admin-button--ghost {
+  background: transparent;
+  border: 1px solid rgba(245, 219, 140, 0.6);
+  color: #f5db8c;
+  box-shadow: none;
+}
+
+.admin-button--ghost:hover,
+.admin-button--ghost:focus {
+  background: rgba(245, 219, 140, 0.12);
+  box-shadow: none;
+}
+
+.admin-button:disabled,
+.admin-button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .admin-card form {
   display: grid;
   gap: 16px;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }
 
 #admin-message {
@@ -217,42 +269,49 @@ body {
 }
 
 .admin-list__item {
-  padding: 10px 14px;
+  list-style: none;
+}
+
+.admin-list__label {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.admin-list__rule {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: rgba(245, 219, 140, 0.8);
+}
+
+.admin-list__select {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 16px;
   border-radius: 12px;
   background: rgba(20, 20, 20, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.05);
   color: #f1f1f1;
   font-size: 0.9rem;
   letter-spacing: 0.03em;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.admin-list__label {
-  flex: 1 1 auto;
-}
-
-.admin-delete-button {
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 107, 107, 0.7);
-  background: rgba(120, 0, 0, 0.2);
-  color: #ff8080;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-align: left;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: transform 0.2s ease, border 0.2s ease, background 0.2s ease;
 }
 
-.admin-delete-button:hover,
-.admin-delete-button:focus {
+.admin-list__select:hover,
+.admin-list__select:focus {
   outline: none;
-  background: rgba(255, 107, 107, 0.35);
-  color: #ffecec;
+  background: rgba(35, 35, 35, 0.9);
+  border-color: rgba(245, 219, 140, 0.6);
   transform: translateY(-1px);
+}
+
+.admin-list__item.is-selected .admin-list__select {
+  border-color: rgba(245, 219, 140, 0.9);
+  box-shadow: 0 6px 18px rgba(245, 219, 140, 0.22);
 }
 
 .zip-card {

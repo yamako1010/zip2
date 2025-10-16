@@ -17,10 +17,12 @@ from password_rules import (
     PasswordRuleError,
     add_client_rule,
     build_custom_password,
+    ensure_clients_table,
     delete_client_rule,
     generate_password,
     get_available_clients,
     set_supabase_client,
+    update_client_rule,
 )
 
 try:
@@ -64,6 +66,13 @@ if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
     try:
         supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         app.logger.info("[MonoZip] Supabase client initialized.")
+        try:
+            ensure_clients_table(supabase_client)
+            app.logger.info("[MonoZip] Supabase clients table ready.")
+        except Exception as exc:  # pragma: no cover - runtime safeguard
+            app.logger.warning(
+                "Supabase clients テーブル準備に失敗しました: %s", exc
+            )
     except Exception as exc:  # pragma: no cover - runtime safeguard
         app.logger.exception("Supabase クライアントの初期化に失敗しました: %s", exc)
 else:
@@ -85,8 +94,9 @@ def _build_default_client_payload() -> list[dict[str, str]]:
         {
             "key": client["key"],
             "label": client["name"],
-            "rule": f"{client['prefix']} + MMDD",
+            "rule": f"{client['prefix']} + {client.get('suffix_rule') or 'MMDD'}",
             "prefix": client["prefix"],
+            "suffix_rule": client.get("suffix_rule", ""),
         }
         for client in DEFAULT_CLIENTS
     ]
@@ -95,6 +105,7 @@ def _build_default_client_payload() -> list[dict[str, str]]:
             "key": CUSTOM_CLIENT_KEY,
             "label": "Custom（自由入力）",
             "rule": "自由入力 + 任意の日付(YYYYMMDD)",
+            "suffix_rule": "",
         }
     )
     return clients
@@ -210,6 +221,7 @@ def api_add_client() -> Any:
 
     name = (payload.get("name") or "").strip()
     prefix = (payload.get("prefix") or "").strip()
+    suffix_rule = (payload.get("suffix_rule") or payload.get("suffixRule") or "").strip()
     admin_password = payload.get("admin_password") or payload.get("adminPassword")
 
     if not admin_password:
@@ -229,7 +241,7 @@ def api_add_client() -> Any:
         )
 
     try:
-        result = add_client_rule(name, prefix)
+        result = add_client_rule(name, prefix, suffix_rule)
     except PasswordRuleError as err:
         app.logger.warning("クライアント追加エラー: %s", err)
         return jsonify({"success": False, "error": str(err)}), 400
@@ -243,6 +255,45 @@ def api_add_client() -> Any:
     if not result["created"]:
         response["notice"] = "既存のルールを再利用しました。"
     return jsonify(response), status
+
+
+@app.post("/api/update_client")
+def api_update_client() -> Any:
+    payload = request.get_json(force=True, silent=True) or {}
+
+    key = (payload.get("key") or payload.get("id") or "").strip()
+    name = (payload.get("name") or "").strip()
+    prefix = (payload.get("prefix") or "").strip()
+    suffix_rule = (payload.get("suffix_rule") or payload.get("suffixRule") or "").strip()
+    admin_password = payload.get("admin_password") or payload.get("adminPassword")
+
+    if not admin_password:
+        return (
+            jsonify(
+                {"success": False, "error": "管理者パスワードを入力してください。"}
+            ),
+            400,
+        )
+
+    if admin_password != ADMIN_PASSWORD:
+        return (
+            jsonify({"success": False, "error": "管理者パスワードが正しくありません。"}),
+            403,
+        )
+
+    try:
+        result = update_client_rule(key, name, prefix, suffix_rule)
+    except PasswordRuleError as err:
+        app.logger.warning("クライアント更新エラー: %s", err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify(
+        {
+            "success": True,
+            "message": result["message"],
+            "client": result["client"],
+        }
+    )
 
 
 @app.post("/api/zip")
@@ -360,7 +411,7 @@ def api_zip() -> Any:
 def api_delete_client() -> Any:
     payload = request.get_json(force=True, silent=True) or {}
 
-    key = (payload.get("key") or "").strip()
+    key = (payload.get("key") or payload.get("id") or "").strip()
     admin_password = payload.get("admin_password") or payload.get("adminPassword")
 
     if not admin_password:
