@@ -160,6 +160,12 @@ function toggleCustomField() {
   }
 }
 
+function applyGeneratedPassword(value) {
+  if (!zipPasswordInput) return;
+  zipPasswordInput.value = value || "";
+  updateZipGenerateState();
+}
+
 async function triggerGeneration() {
   const clientKey = clientSelect.value;
   const targetDate = dateInput.value;
@@ -188,6 +194,7 @@ async function triggerGeneration() {
       ? `生成日: ${targetDate}`
       : "生成しました。";
     statusEl.dataset.state = "success";
+    applyGeneratedPassword(localPassword);
     return;
   }
 
@@ -218,6 +225,7 @@ async function triggerGeneration() {
     passwordOutput.textContent = result.password;
     statusEl.textContent = result.date ? `生成日: ${result.date}` : "生成しました。";
     statusEl.dataset.state = "success";
+    applyGeneratedPassword(result.password);
   } catch (error) {
     console.error(error);
     passwordOutput.textContent = "------";
@@ -854,6 +862,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   document.querySelectorAll(".password-toggle").forEach((button) => {
+    const initialTargetId = button.dataset.target;
+    if (initialTargetId) {
+      const targetInput = document.getElementById(initialTargetId);
+      if (targetInput) {
+        button.textContent =
+          targetInput.type === "password" ? "表示" : "非表示";
+      }
+    }
+
     button.addEventListener("click", () => {
       const targetId = button.dataset.target;
       if (!targetId) return;
