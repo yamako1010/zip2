@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import tempfile
 from datetime import date, datetime
 from itertools import count
@@ -328,10 +329,14 @@ def api_zip() -> Any:
     if not normalized_name:
         normalized_name = f"monozip_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
 
-    base_folder_name = Path(normalized_name).stem
-    if not base_folder_name:
-        base_folder_name = f"monozip_{datetime.now().strftime('%Y%m%d_%H%M')}"
-    folder_name = base_folder_name
+    folder_candidate = Path(requested_name or normalized_name).stem
+    folder_candidate = re.sub(r'[\\/:*?"<>|]+', "_", folder_candidate).strip(" .")
+    if not folder_candidate:
+        folder_candidate = Path(normalized_name).stem
+        folder_candidate = re.sub(r'[\\/:*?"<>|]+', "_", folder_candidate).strip(" .")
+    if not folder_candidate:
+        folder_candidate = f"monozip_{datetime.now().strftime('%Y%m%d_%H%M')}"
+    folder_name = folder_candidate
 
     collected_files: list[tuple[str, bytes]] = []
     total_size = 0
