@@ -328,6 +328,11 @@ def api_zip() -> Any:
     if not normalized_name:
         normalized_name = f"monozip_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
 
+    base_folder_name = Path(normalized_name).stem
+    if not base_folder_name:
+        base_folder_name = f"monozip_{datetime.now().strftime('%Y%m%d_%H%M')}"
+    folder_name = base_folder_name
+
     collected_files: list[tuple[str, bytes]] = []
     total_size = 0
     fallback_names = (f"file_{i}" for i in count(1))
@@ -369,8 +374,6 @@ def api_zip() -> Any:
         app.logger.warning("ZIP生成リクエストに有効ファイルがありませんでした。")
         return jsonify({"error": "有効なファイルが選択されていません。"}), 400
 
-    folder_suffix = datetime.now().strftime("%Y%m%d_%H%M")
-    folder_name = f"MonoZip_{folder_suffix}"
     password_bytes = password.encode("utf-8")
     zip_stream: io.BytesIO | None = None
 
